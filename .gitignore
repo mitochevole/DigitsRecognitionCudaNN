@@ -1,0 +1,8 @@
+accuracy_over epochs_*
+PROVA/
+build/
+dist/
+mnist/
+nbproject/
+weights_prova_Load-Save/
+Makefile
