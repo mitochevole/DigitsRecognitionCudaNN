@@ -6,3 +6,4 @@ mnist/
 nbproject/
 weights_prova_Load-Save/
 Makefile
+.dep.inc
