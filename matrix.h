@@ -137,8 +137,9 @@ void ReadMNIST_Images(int NumberOfImages, int DataOfAnImage, matrix& arr, std::s
         file.read((char*)&n_cols,sizeof(n_cols));
         n_cols= ReverseInt(n_cols);
         
-        unsigned char buffer[offset*784];
-        file.read((char*)&buffer,sizeof(buffer));   
+//        unsigned char buffer[offset*n_rows*n_cols];
+//        file.read((char*)&buffer,sizeof(buffer));  
+        file.ignore(offset*n_rows*n_cols*sizeof(unsigned char));
         for(int i=0;i<number_of_images;++i)
         {
             for(int r=0;r<n_rows;++r)
@@ -148,7 +149,7 @@ void ReadMNIST_Images(int NumberOfImages, int DataOfAnImage, matrix& arr, std::s
                     //std::cout<<" weee! "<<i<<"\t"<<r<<"\t"<<c<<std::endl;
                     unsigned char temp=0;
                     file.read((char*)&temp,sizeof(temp));
-                    arr(i,(n_rows*r)+c)= (double)temp;
+                    arr(i,(n_rows*r)+c)= (double)temp/255.0;
                 }
             }
         }
@@ -176,10 +177,10 @@ void ReadMNIST_Labels(int NumberOfLabels, matrix& arr, std::string filename,bool
         number_of_items= NumberOfLabels; //ReverseInt(number_of_items);
         
         
-        unsigned char buffer[offset];
-        file.read((char*)&buffer,sizeof(buffer));
-        
-        
+//        unsigned char buffer[offset];
+//        file.read((char*)&buffer,sizeof(buffer));
+//        
+        file.ignore(offset*sizeof(unsigned char));
         for(int i = 0; i < number_of_items; ++i){
             unsigned char temp=0;
             file.read((char*)&temp,sizeof(temp));
@@ -263,6 +264,9 @@ public:
     //parentheses operator: A(i,j) returns element A_i,j of matrix A    
 __host__ __device__    double & operator()(const int& i,const int& j);
 
+
+    d_matrix operator()(const int& i0, const int& iM, const int& j0, const int& jN);
+
     //copy device matrix content to host matrix
     void toHost(const matrix& A);
     
@@ -290,6 +294,9 @@ __host__ __device__    double & operator()(const int& i,const int& j);
     //from matrix A returns matrix of size (batch X columns)
     //extracting #batch rows from A starting from row i
     d_matrix get_row(const int i, int batch);
+    
+    //add a row of val at position row and returns new matrix of size (m+1 x n)
+    d_matrix add_row(int val);
     
     //one-hot encoder operator, returns boolean sparse matrix B
     //where B(i,j) == 1 iff A(i)==j
@@ -354,6 +361,29 @@ d_matrix::d_matrix(const d_matrix& rhs): V(rhs.V),X(rhs.X),Y(rhs.Y){
 double & d_matrix::operator ()(const int& i, const int& j){
     return this->V[j+this->Y*i];
 }
+
+
+/// copy submatrix of A into B
+__global__ void cropMatrixKernel(double * A, d_matrix B, int i0, int j0, int Acols){
+    int idx = threadIdx.x+ blockIdx.x*blockDim.x;
+    if(idx < B.X*B.Y){ 
+        int i = idx/B.Y;
+        int j = idx%B.Y;
+        B(i,j) = A[(i+i0)*Acols+j+j0];
+    }
+}
+
+
+//select range of consecutive rows and columns and create new matrix
+d_matrix d_matrix::operator()(const int& i0, const int& iM, const int& j0, const int& jN){
+    d_matrix B(iM-i0,jN-j0);    
+    int gridSize = ceil(B.X*B.Y/(float)blockSize);
+    cropMatrixKernel<<<gridSize,blockSize>>>(this->V,B,i0,j0,this->Y);
+    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchk( cudaPeekAtLastError() );     
+    return B;    
+}
+
 
 //copy device matrix content to host matrix
 void d_matrix::toHost(const matrix& A){
@@ -544,8 +574,9 @@ void d_matrix::display_dim(){
 //load matrix from ascii
 void d_matrix::load(std::string filename){
     matrix temp(this->X,this->Y);
-    this->toHost(temp);
     temp.load(filename);
+    this->toDev(temp);
+    
 }
 
 //save matrix to ascii
@@ -671,16 +702,37 @@ __global__ void getRowKernel(double * A, double * R, int i, int batch, int Y){
 }
 
 
-//from matrix A returns matrix of size (batch X columns)
+//from matrix A returns matrix of size (columns of A X Batch)
 //extracting #batch rows from A starting from row i
+//
 d_matrix d_matrix::get_row(const int i, int batch = 1){
-    d_matrix row(batch,this->Y);
-    double gridSize = ceil((batch*this->Y)/(float)blockSize);
+    d_matrix row(batch,this->Y);                        // row sizes = (batch X A_cols)
+    int gridSize = ceil((batch*this->Y)/(float)blockSize);
     getRowKernel<<<gridSize,blockSize>>>(this->V,row.V,i,batch,this->Y);
     gpuErrchk(cudaDeviceSynchronize());
     gpuErrchk(cudaPeekAtLastError());
     return row.transpose();
     
+}
+
+
+//copy self matrix A into larger matrix B starting from position i0,j0
+__global__ void copyMatrixKernel(double * A, d_matrix B, int i0, int j0,int Arows, int Acols){
+    int idx = threadIdx.x+ blockIdx.x*blockDim.x;
+    if(idx < Arows*Acols){ 
+        int i = idx/Arows;
+        int j = idx%Acols;
+        B(i+i0,j+j0) = A[idx];
+    }
+}
+
+d_matrix d_matrix::add_row(int val){
+    d_matrix B(this->X+1,this->Y,val);
+    int gridSize = ceil((this->X*this->Y)/(float)blockSize);
+    copyMatrixKernel<<<gridSize,blockSize>>>(this->V,B,1,0,this->X,this->Y);
+    gpuErrchk(cudaDeviceSynchronize());
+    gpuErrchk(cudaPeekAtLastError());
+    return B;
 }
 
 
@@ -700,7 +752,7 @@ __global__ void dummifyKernel(double * Y0, d_matrix Y, int N){
 d_matrix d_matrix::dummify(int max){
     
     d_matrix dummy(this->X,max);
-    double gridSize = ceil(this->X*max/(float)blockSize);
+    int gridSize = ceil(this->X*max/(float)blockSize);
     dummifyKernel<<<gridSize,blockSize>>>(this->V,dummy,this->X*max);
     gpuErrchk(cudaDeviceSynchronize());
     gpuErrchk(cudaPeekAtLastError());

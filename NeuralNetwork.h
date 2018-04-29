@@ -51,6 +51,7 @@ public:
           a[i] = d_matrix(sizes[i],1);
           if(i<L-1){
               zeta[i] = d_matrix(sizes[i+1],1);    
+//              theta[i] = d_matrix(sizes[i+1],sizes[i]+1);
               theta[i] = d_matrix(sizes[i+1],sizes[i]);
               b[i] = d_matrix(sizes[i+1],1);
               delta[i] = d_matrix(sizes[i+1],1); 
@@ -144,14 +145,7 @@ public:
 __global__ void costKernel(d_matrix cost, d_matrix Y, d_matrix a){
     int idx = threadIdx.x+blockIdx.x*blockDim.x;
     if(idx < Y.X*Y.Y){
-//        if(a.V[idx]==1){
-//            cost.V[idx] = - Y.V[idx]*log(a.V[idx]);
-//        }
-//        else if(a.V[idx]==0){
-//            cost.V[idx] = - (1.- Y.V[idx])*log(1-a.V[idx]);
-//        }
-//        else
-            cost.V[idx] = -(Y.V[idx]*log(a.V[idx])+(1.- Y.V[idx])*log(1-a.V[idx]) );
+        cost.V[idx] = -(Y.V[idx]*log(a.V[idx])+(1.- Y.V[idx])*log(1-a.V[idx]) );
     }
 }
 
@@ -160,15 +154,12 @@ __global__ void costKernel(d_matrix cost, d_matrix Y, d_matrix a){
 //compute cost functions as cross-entropy: Sum_{i=1}^{m} y_i*log(h(x_i))+(1-y_i)*log(1-h(x_i))
 double NeuralNetwork::cost(d_matrix& Y, double lambda, int batch){
     d_matrix ones(Y.X,Y.Y,1);
-    d_matrix cost = (Y.dot(logM(a[L-1]))+(ones+Y*(-1)).dot(logM(ones+a[L-1]*(-1))))*(-1);
-//    d_matrix cost(Y.X,Y.Y);
-//    int gridSize = ceil(Y.X*Y.Y/(float)blockSize);
-//    costKernel<<<gridSize,blockSize>>>(cost,Y,a[L-1]);
-//    gpuErrchk( cudaDeviceSynchronize() );
-//    gpuErrchk( cudaPeekAtLastError() );
+    d_matrix cost = (Y.dot(logM(a[L-1]))+(ones+Y*(-1.)).dot(logM(ones+a[L-1]*(-1.))))*(-1.);
     double C = cost.sum()/batch;
     for(int l = 0; l < L-1; l++){
-        C += 0.5*(theta[l].dot(theta[l])*(lambda)).sum()/batch;
+        C += (0.5*lambda/batch)*((theta[l]).dot(theta[l])).sum();
+//        C += (0.5*lambda/batch)*((theta[l](0,theta[l].X,1,theta[l].Y)).dot(theta[l](0,theta[l].X,1,theta[l].Y))*(lambda)).sum();
+
     }
     
     return C;
@@ -182,6 +173,7 @@ double NeuralNetwork::cost(d_matrix& Y, double lambda, int batch){
 void NeuralNetwork::feedForward(){
     for(int l = 0; l < L-1; ++l){
         zeta[l] = (theta[l]*a[l])+b[l];
+//        zeta[l] = (theta[l]*(a[l].add_row(1.0)));
         a[l+1] = sigmoid(zeta[l]);   
     }
 }
@@ -191,6 +183,7 @@ void NeuralNetwork::backProp(d_matrix& Y){
     delta[L-2] = (a[L-1] + (Y*(-1.)));
     for(int l = L-3; l >= 0; --l ){        
         delta[l] = ((theta[l+1].transpose())*delta[l+1]).dot(sigmoidPrime(zeta[l]));
+//        delta[l] = ((theta[l+1].transpose())*delta[l+1])(1,theta[l+1].Y,0,delta[l+1].Y).dot(sigmoidPrime(zeta[l]));
     }    
 }
 
@@ -198,9 +191,9 @@ void NeuralNetwork::backProp(d_matrix& Y){
 //compute gradient descent
 void NeuralNetwork::gradientDescent(double eta, double lambda, int batch ,int n_images){
     for(int l = 0; l < L-1; ++l){
-        theta[l] = (theta[l]*(1.-eta*lambda/n_images) + (delta[l]*(a[l].transpose()))*(- eta/batch));
-        b[l] = b[l] + (delta[l]).sum_rows()*(- eta/batch);
-
+//        theta[l] = (theta[l]*(1.-eta*lambda/n_images)) + ((delta[l]*(a[l].add_row(1.0).transpose()))*( -eta/batch));
+        theta[l] = (theta[l]*(1.-eta*lambda/n_images)) + ((delta[l]*(a[l].transpose()))*( -eta/batch));
+        b[l] = b[l] + ((delta[l].sum_rows())*(- eta/batch));
     }
 }
 
@@ -221,8 +214,6 @@ void NeuralNetwork::load_data(int n_images, d_matrix& X, d_matrix& Y,std::string
 void NeuralNetwork::random_init(){
     for(int l = 0; l < L-1; ++l){
         theta[l].randomize(0,1./sqrt(theta[l].Y));
-//        theta[l].display();
-//        std::cin.get();
         b[l].randomize(0,1.);
     }
 }
@@ -231,7 +222,7 @@ void NeuralNetwork::random_init(){
 //training algorithm
 void NeuralNetwork::train(int n_images_train, double eta, double lambda, int epochs, int batch = 10, 
             bool out_cost=false, bool verbose = false, bool monitor_accuracy = false, bool print_accuracy = false){
-    d_matrix X0(n_images_train,im_size);
+    d_matrix X0(n_images_train,im_size); //X0 size is (train_set size X n_features) e.g.: 10K X 784 in case of MNIST images
     d_matrix Y0(n_images_train,1);
     this->load_data(n_images_train, X0,Y0,im_train_name,label_train_name,verbose); //read in training set images and labels
     Y0 = Y0.dummify(10);        //one-hot-encoding of labels
@@ -251,12 +242,16 @@ void NeuralNetwork::train(int n_images_train, double eta, double lambda, int epo
     for( int e = 0; e < epochs; ++e){
         double count = 0;
         double C = 0;
+        std::srand(std::time(0));
         std::random_shuffle(&order[0],&order[n_images_train]); //shuffle order vector
         X0.arrange_rows(order);                                //use it to rearrange data at 
         Y0.arrange_rows(order);                                //beginning of each epoch       
         for(int i = 0; i < n_images_train; i+= batch){
-            a[0] = X0.get_row(i,batch);             //assign to a_0 a minibatch of the training set
-            Y = Y0.get_row(i,batch);                //assign to Y a minibatch of the corresponding labels
+            //the returned matrix is transposed so that 
+            //features are now described along columns and each element 
+            //in minibatch is a different column
+            a[0] = X0.get_row(i,batch);             //assign to a_0 a minibatch of the training set. a0 =(sizes[0]X minibatch)
+            Y = Y0.get_row(i,batch);                //assign to Y a minibatch of the corresponding labels Y (one-hot-encoding(10) X minibatch)
             feedForward();                          //feedforward step. obtain a prediction h(X)
             if(monitor_accuracy||print_accuracy){
                 count += compare(Y,batch);
