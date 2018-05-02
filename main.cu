@@ -12,6 +12,80 @@
   
 int main(int argc, char** argv) {
 
+
+//DEFINE NN HYPERPARAMETERS
+
+    int trainSize = atoi(argv[1]);
+    int batchSize = atoi(argv[2]);
+    int epochs = atoi(argv[3]);
+    double lambda = atof(argv[4]);
+    double eta = atof(argv[5]); //if Lambda = 0, eta = 3
+    bool monitor_cost = atoi(argv[6]);
+    bool print_cost =atoi(argv[7]);
+    bool verbose = atoi(argv[8]);
+    bool monitor_accuracy = atoi(argv[9]);
+    bool print_accuracy = atoi(argv[10]);
+    std::string train_label_output = argv[11];
+    const int Layers = atoi(argv[12]);
+    int sizes[Layers];
+    for(int i = 0; i < Layers; i++){
+            sizes[i]= atoi(argv[13+i]);
+    }
+    
+    NeuralNetwork NN(Layers,sizes);
+    
+    double cost_cv=0;    
+    
+    bool train = atoi(argv[13+Layers]);
+    if(train)
+        NN.train(trainSize, eta, lambda, epochs, train_label_output, batchSize, 
+                monitor_cost, print_cost, verbose, 
+                monitor_accuracy, print_accuracy);
+    bool save_weights = atoi(argv[14+Layers]);
+    bool load_weights = atoi(argv[15+Layers]);
+    if(save_weights)
+    {
+        std::string label;
+        std::cin>>label;
+        NN.saveWeights(label);
+    }
+    if(load_weights)
+    {
+        std::string label;
+        std::cin>>label;
+        NN.loadWeights(label);
+    }
+    
+    bool test_NN = atoi(argv[16+Layers]);
+    if(test_NN){
+        bool cross_validate = atoi(argv[17+Layers]);
+        int testSize = atoi(argv[18+Layers]);
+
+        std::string test_label_output = argv[19+Layers];
+        std::ofstream outfile;
+        outfile.open(test_label_output, std::ios_base::app);
+        double accuracy;
+        if(cross_validate){
+            accuracy = NN.test( testSize, im_train_name, label_train_name,true,cost_cv,batchSize,false, trainSize);
+            std::cout<<"accuracy: "<<accuracy<<" cost: "<<cost_cv<<std::endl;
+            outfile<<accuracy<<"\t"<<cost_cv<<std::endl;
+        }
+        else{
+            accuracy = NN.test( testSize, im_test_name, label_test_name,true,cost_cv,batchSize,false, 0);
+            std::cout<<"accuracy: "<<accuracy<<" cost: "<<cost_cv<<std::endl;
+            outfile<<accuracy<<"\t"<<cost_cv<<std::endl;
+        }
+    }
+//    NeuralNetwork NN2(Layers,sizes);
+//    NN2.loadWeights("weights_"+label);
+//    test = NN2.test( 5000, im_train_name, label_train_name,true,cost_cv,batchSize,false, maxSize);
+//    std::cout<<"test: "<<test<<" cost: "<<cost_cv<<std::endl;
+
+    return 0;
+}
+
+//  //  learningCurve(Layers, sizes, outName,  eta,  lambda,  batchSize,  epochs, sizeStep,  maxSize, out_cost);
+
 //    d_matrix A(3,4,2);
 //    d_matrix W(4,3,1);
 //    d_matrix B(,1,1);
@@ -28,35 +102,3 @@ int main(int argc, char** argv) {
 //    F.add_row(1.0).display();
 //    F.add_row(1.0).transpose().display();
 //    
-
-
-    int maxSize = 40000;
-//    int sizeStep = 100;
-    int batchSize = 10;
-    int epochs = 30;
-    double lambda = 2.0;
-    double eta = 0.5; //if Lambda = 0, eta = 3
-    bool out_cost = true;
-    bool verbose = false;
-    bool monitor_accuracy = true;
-    bool print_accuracy = false;
-    std::string outName = "/home/michele/Desktop/learning_curve.txt";
-    double cost_cv=0;
-    
-    const int Layers = 3;
-    int sizes[Layers] = {im_size,30,10};
-    NeuralNetwork NN(Layers,sizes);
-    NN.train(maxSize, eta, lambda, epochs, batchSize,out_cost, verbose, monitor_accuracy, print_accuracy);
-    std::string label = "prova_Load-Save";
-    NN.saveWeights(label);
-    double test = NN.test( 5000, im_test_name, label_test_name,true,cost_cv,batchSize,false, 0);
-    std::cout<<"test: "<<test<<" cost: "<<cost_cv<<std::endl;
-    
-    NeuralNetwork NN2(Layers,sizes);
-    NN2.loadWeights("weights_"+label);
-    test = NN2.test( 5000, im_train_name, label_train_name,true,cost_cv,batchSize,false, maxSize);
-    std::cout<<"test: "<<test<<" cost: "<<cost_cv<<std::endl;
-//  //  learningCurve(Layers, sizes, outName,  eta,  lambda,  batchSize,  epochs, sizeStep,  maxSize, out_cost);
-
-    return 0;
-}

@@ -126,8 +126,9 @@ public:
     void random_init();
     
     //train algorithm
-    void train(int n_images_train, double eta, double lambda, int epochs, 
-               int batch, bool out_cost, bool verbose, bool monitor_accuracy, bool print_accuracy);
+    void train(int n_images_train, double eta, double lambda, int epochs, std::string label,
+               int batch, bool monitor_cost, bool print_cost, bool verbose, 
+               bool monitor_accuracy, bool print_accuracy);
     //compare prediction and true label
     double compare(d_matrix& Y, int batch);
     
@@ -157,7 +158,7 @@ double NeuralNetwork::cost(d_matrix& Y, double lambda, int batch){
     d_matrix cost = (Y.dot(logM(a[L-1]))+(ones+Y*(-1.)).dot(logM(ones+a[L-1]*(-1.))))*(-1.);
     double C = cost.sum()/batch;
     for(int l = 0; l < L-1; l++){
-        C += (0.5*lambda/batch)*((theta[l]).dot(theta[l])).sum();
+        C += (0.5*lambda/batch)*(((theta[l]).dot(theta[l])).sum());
 //        C += (0.5*lambda/batch)*((theta[l](0,theta[l].X,1,theta[l].Y)).dot(theta[l](0,theta[l].X,1,theta[l].Y))*(lambda)).sum();
 
     }
@@ -220,8 +221,10 @@ void NeuralNetwork::random_init(){
 
 
 //training algorithm
-void NeuralNetwork::train(int n_images_train, double eta, double lambda, int epochs, int batch = 10, 
-            bool out_cost=false, bool verbose = false, bool monitor_accuracy = false, bool print_accuracy = false){
+void NeuralNetwork::train(int n_images_train, double eta, double lambda, int epochs, std::string label, int batch = 10, 
+            bool monitor_cost=false, bool print_cost = false, bool verbose = false, 
+            bool monitor_accuracy = false, bool print_accuracy = false
+            ){
     d_matrix X0(n_images_train,im_size); //X0 size is (train_set size X n_features) e.g.: 10K X 784 in case of MNIST images
     d_matrix Y0(n_images_train,1);
     this->load_data(n_images_train, X0,Y0,im_train_name,label_train_name,verbose); //read in training set images and labels
@@ -235,9 +238,15 @@ void NeuralNetwork::train(int n_images_train, double eta, double lambda, int epo
         order[i]=i;    
     std::ofstream output;
     std::stringstream filename;
-    if(print_accuracy){
-        filename<<"accuracy_over_epochs_"<<std::time(NULL);
+    if(print_accuracy || print_cost){
+        filename<<"train_output_"<<label.c_str();
+        std::cout<<filename.str()<<std::endl;
         output.open(filename.str());
+        if(!output.is_open())
+        {
+            std::cout<<"Could not open "<<filename.str()<<std::endl;
+            exit(1);
+        }
     }
     for( int e = 0; e < epochs; ++e){
         double count = 0;
@@ -256,20 +265,26 @@ void NeuralNetwork::train(int n_images_train, double eta, double lambda, int epo
             if(monitor_accuracy||print_accuracy){
                 count += compare(Y,batch);
             }
-            if(out_cost){
-                C += cost(Y,lambda,batch);
+            if(monitor_cost || print_cost){
+                C += cost(Y,0,batch); // When monitoring the cost, the contribution of regularization is left out
             }
             backProp(Y);                            //use backpropagation to estimate gradients of weights theta and b            
             gradientDescent(eta,lambda,batch, n_images_train);      //perform gradient descent to improve weights
         }
-        if(out_cost){                               //if true prints out the cost function for the last minibatch at the end of each epoch
+        if(monitor_cost){                               //if true prints out the cost function for the last minibatch at the end of each epoch
             std::cout<<e<<"\t"<<(C*batch)/n_images_train<<std::endl;
             }
         if(monitor_accuracy){
             std::cout<<e<<"\t"<<count/n_images_train<<std::endl;
         }  
-        if(print_accuracy)
-            output<<e<<"\t"<<count/n_images_train<<std::endl;
+        if(print_accuracy || print_cost){
+            output<<e<<"\t";
+            if(print_accuracy)
+                output<<count/n_images_train<<"\t";
+            if(print_cost)
+                output<<(C*batch)/n_images_train;
+            output<<std::endl;
+        }
     }
     if(output.is_open())
         output.close();

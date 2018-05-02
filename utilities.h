@@ -30,7 +30,9 @@ void learningCurve(int Layers, int * sizes, std::string outName,
         int sizes[Layers] = {im_size,30,10};
         NeuralNetwork NN(Layers,sizes);
         double cost_train = 0, cost_cv = 0;
-        NN.train(size, eta, lambda, epochs, batchSize,false, false, false, false);
+        std::stringstream label;
+        label<<"learning_"<<size<<".txt";
+        NN.train(size, eta, lambda, epochs, label.str(), batchSize,false, false, false, false, false);
         std::cout<<"training complete"<<std::endl;
         double testOnTrain = NN.test( size, im_train_name, label_train_name,true,cost_train ,batchSize,false, 0);
         std::cout<<"test on train set complete"<<std::endl;
