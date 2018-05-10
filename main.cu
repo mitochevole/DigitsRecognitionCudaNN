@@ -35,26 +35,30 @@ int main(int argc, char** argv) {
     NeuralNetwork NN(Layers,sizes);
     
     double cost_cv=0;    
+    bool save_weights = atoi(argv[14+Layers]);
+    bool load_weights = atoi(argv[15+Layers]);
+    std::string weights_label = argv[20+Layers];
+    
+    if(load_weights)
+    {
+        //std::cout<<"loading weights and biases from: "<<weights_label<<std::endl;
+        NN.loadWeights(weights_label);
+    }
+    
     
     bool train = atoi(argv[13+Layers]);
     if(train)
         NN.train(trainSize, eta, lambda, epochs, train_label_output, batchSize, 
                 monitor_cost, print_cost, verbose, 
                 monitor_accuracy, print_accuracy);
-    bool save_weights = atoi(argv[14+Layers]);
-    bool load_weights = atoi(argv[15+Layers]);
+   
+    
     if(save_weights)
     {
-        std::string label;
-        std::cin>>label;
-        NN.saveWeights(label);
+        //std::cout<<"saving weights and biases at: "<<weights_label<<std::endl;
+        NN.saveWeights(weights_label);
     }
-    if(load_weights)
-    {
-        std::string label;
-        std::cin>>label;
-        NN.loadWeights(label);
-    }
+    
     
     bool test_NN = atoi(argv[16+Layers]);
     if(test_NN){
@@ -76,11 +80,6 @@ int main(int argc, char** argv) {
             outfile<<accuracy<<"\t"<<cost_cv<<std::endl;
         }
     }
-//    NeuralNetwork NN2(Layers,sizes);
-//    NN2.loadWeights("weights_"+label);
-//    test = NN2.test( 5000, im_train_name, label_train_name,true,cost_cv,batchSize,false, maxSize);
-//    std::cout<<"test: "<<test<<" cost: "<<cost_cv<<std::endl;
-
     return 0;
 }
 

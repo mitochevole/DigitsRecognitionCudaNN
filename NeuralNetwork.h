@@ -59,7 +59,7 @@ public:
           }  
           
       }
-      
+      this->random_init();              //initialise weights and biases
     };
     //destructor
     ~NeuralNetwork(){
@@ -213,6 +213,7 @@ void NeuralNetwork::load_data(int n_images, d_matrix& X, d_matrix& Y,std::string
 
 //random initialisation of weights and biases
 void NeuralNetwork::random_init(){
+    //std::cout<<"random initialization"<<std::endl;
     for(int l = 0; l < L-1; ++l){
         theta[l].randomize(0,1./sqrt(theta[l].Y));
         b[l].randomize(0,1.);
@@ -232,7 +233,7 @@ void NeuralNetwork::train(int n_images_train, double eta, double lambda, int epo
     d_matrix Y(10,batch);       //according to selected mini-batch size will take 
     d_matrix X(im_size,batch);  //slices of size batch from data
     
-    random_init();              //initialise weights and biases
+    
     int order[n_images_train];  //create vector of ints between 0 and size of training set-1
     for (int i = 0; i < n_images_train; i++)
         order[i]=i;    
@@ -375,7 +376,6 @@ double NeuralNetwork::test(int n_images_test, std::string test_data, std::string
 //save weights and biases to file
 void NeuralNetwork::saveWeights(std::string label){
     std::stringstream streamfile;
-    streamfile<<"weights_";
     streamfile<<label.c_str();
     system(("mkdir -p "+streamfile.str()).c_str());
     for(int l = 0 ; l < L-1; l ++){
